@@ -1,38 +1,18 @@
-git clone https://github.com/yourusername/spk-ahp.git
-cd spk-ahp
 
-cd backend
-npm install
+---
 
-# Server
-PORT=5000
-NODE_ENV=development
+## 🚀 Instalasi & Menjalankan Project
 
-# Database
-DB_HOST=localhost
-DB_USER=root
-DB_PASSWORD=
-DB_NAME=db_ahp
-DB_PORT=3306
+### 📋 Prerequisites
 
-# JWT
-JWT_SECRET=your-super-secret-jwt-key-change-this
-JWT_EXPIRE=7d
+Pastikan Anda telah menginstal:
+- [Node.js](https://nodejs.org/) (v18 atau lebih baru)
+- [MySQL](https://www.mysql.com/) (v8 atau lebih baru)
+- [XAMPP](https://www.apachefriends.org/) atau LAMP (untuk MySQL)
+- [Git](https://git-scm.com/)
 
-# Buat database
-mysql -u root -p -e "CREATE DATABASE IF NOT EXISTS db_ahp"
+### 1️⃣ Clone Repository
 
-# Jalankan migrasi
-npm run migrate
-
-# Jalankan seeder
-npm run seed
-
-cd ../frontend
-npm install
-
-cd backend
-npm run dev
-
-cd frontend
-npm run dev
+```bash
+git clone https://github.com/username/spk-ahp-perpustakaan.git
+cd spk-ahp-perpustakaan
