@@ -9,7 +9,7 @@ dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-const JWT_SECRET = process.env.JWT_SECRET || '7f3k8s9d2j5h3k8s9d2j5h3k8s9d2j5h3';
+const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-this';
 const JWT_EXPIRE = process.env.JWT_EXPIRE || '7d';
 
 // ============================================================
