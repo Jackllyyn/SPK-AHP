@@ -9,11 +9,11 @@ dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-const JWT_SECRET = process.env.JWT_SECRET || '7f3k8s9d2j5h3k8s9d2j5h3k8s9d2j5h3';
+const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-this';
 const JWT_EXPIRE = process.env.JWT_EXPIRE || '7d';
 
 // ============================================================
-// CORS - ALLOW ALL (TERSEDERHANA)
+// CORS - IZINKAN SEMUA
 // ============================================================
 app.use(cors({
     origin: '*',
@@ -21,7 +21,13 @@ app.use(cors({
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept']
 }));
 
-// Additional CORS headers
+app.options('*', (req, res) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept');
+    res.status(200).end();
+});
+
 app.use((req, res, next) => {
     res.header('Access-Control-Allow-Origin', '*');
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
@@ -45,25 +51,61 @@ app.use((req, res, next) => {
 // ============================================================
 // DATABASE CONNECTION
 // ============================================================
-const db = mysql.createPool({
-    host: process.env.DB_HOST || 'localhost',
-    user: process.env.DB_USER || 'root',
-    password: process.env.DB_PASSWORD || '',
-    database: process.env.DB_NAME || 'railway',
-    port: process.env.DB_PORT || 3306,  
+console.log('📊 ===== ENVIRONMENT VARIABLES =====');
+console.log('DB_HOST:', process.env.DB_HOST);
+console.log('DB_PORT:', process.env.DB_PORT);
+console.log('DB_NAME:', process.env.DB_NAME);
+console.log('DB_USER:', process.env.DB_USER);
+console.log('=====================================');
+
+const dbConfig = {
+    host: process.env.DB_HOST || process.env.MYSQLHOST || 'localhost',
+    user: process.env.DB_USER || process.env.MYSQLUSER || 'root',
+    password: process.env.DB_PASSWORD || process.env.MYSQLPASSWORD || '',
+    database: process.env.DB_NAME || process.env.MYSQLDATABASE || 'railway',
+    port: parseInt(process.env.DB_PORT || process.env.MYSQLPORT || '3306'),
     waitForConnections: true,
     connectionLimit: 10,
-    queueLimit: 0
+    queueLimit: 0,
+    connectTimeout: 60000,
+    ssl: {
+        rejectUnauthorized: false
+    }
+};
+
+console.log('📡 Database Config:', {
+    host: dbConfig.host,
+    port: dbConfig.port,
+    database: dbConfig.database,
+    user: dbConfig.user
 });
+
+const db = mysql.createPool(dbConfig);
 
 (async () => {
     try {
-        const [rows] = await db.query('SELECT 1');
+        console.log('🔄 Mencoba koneksi ke database...');
+        const [rows] = await db.query('SELECT 1 as connected');
         console.log('✅ Database terhubung!');
+        console.log('📊 Database:', dbConfig.database);
+        console.log('📡 Host:', dbConfig.host);
+        console.log('🔌 Port:', dbConfig.port);
     } catch (err) {
         console.error('❌ Gagal koneksi ke database!');
         console.error('   Error:', err.message);
-        process.exit(1);
+        console.error('   Code:', err.code);
+        
+        if (process.env.MYSQL_URL) {
+            console.log('🔄 Mencoba dengan MYSQL_URL...');
+            try {
+                const connection = await mysql.createConnection(process.env.MYSQL_URL);
+                await connection.query('SELECT 1');
+                console.log('✅ Database terhubung dengan MYSQL_URL!');
+                await connection.end();
+            } catch (err2) {
+                console.error('❌ Gagal juga dengan MYSQL_URL:', err2.message);
+            }
+        }
     }
 })();
 
@@ -158,7 +200,7 @@ const isUser = (req, res, next) => {
 };
 
 // ============================================================
-// HEALTH CHECK
+// ROUTE UTAMA & HEALTH CHECK
 // ============================================================
 app.get('/api/health', async (req, res) => {
     try {
@@ -167,6 +209,9 @@ app.get('/api/health', async (req, res) => {
             success: true,
             status: 'OK',
             database: 'Connected',
+            databaseName: process.env.DB_NAME || 'railway',
+            host: process.env.DB_HOST,
+            port: process.env.DB_PORT,
             timestamp: new Date().toISOString()
         });
     } catch (err) {
@@ -174,7 +219,9 @@ app.get('/api/health', async (req, res) => {
             success: false,
             status: 'ERROR',
             database: 'Disconnected',
-            error: err.message
+            error: err.message,
+            host: process.env.DB_HOST,
+            port: process.env.DB_PORT
         });
     }
 });
@@ -208,7 +255,7 @@ app.get('/api/test', async (req, res) => {
 });
 
 // ============================================================
-// AUTH ROUTES
+// ROUTE AUTH
 // ============================================================
 app.post('/api/auth/login', async (req, res) => {
     console.log('🔐 Login attempt:', req.body.username || 'unknown');
@@ -293,7 +340,8 @@ app.post('/api/auth/login', async (req, res) => {
         console.error('Login error:', error);
         res.status(500).json({
             success: false,
-            message: 'Terjadi kesalahan pada server'
+            message: 'Terjadi kesalahan pada server',
+            error: error.message
         });
     }
 });
@@ -537,7 +585,7 @@ app.delete('/api/auth/users/:id', verifyToken, isAdmin, async (req, res) => {
 });
 
 // ============================================================
-// KRITERIA ROUTES
+// ROUTE KRITERIA
 // ============================================================
 app.get('/api/kriteria', async (req, res) => {
     try {
@@ -628,7 +676,7 @@ app.delete('/api/kriteria/:id', verifyToken, isAdmin, async (req, res) => {
 });
 
 // ============================================================
-// SUB KRITERIA ROUTES
+// ROUTE SUB-KRITERIA
 // ============================================================
 app.get('/api/sub-kriteria', async (req, res) => {
     try {
@@ -757,7 +805,7 @@ app.delete('/api/sub-kriteria/truncate', verifyToken, isAdmin, async (req, res) 
 });
 
 // ============================================================
-// ALTERNATIF (BUKU) ROUTES
+// ROUTE ALTERNATIF (BUKU)
 // ============================================================
 app.get('/api/alternatif', async (req, res) => {
     try {
@@ -882,7 +930,7 @@ app.post('/api/alternatif/delete-all', verifyToken, isAdmin, async (req, res) =>
 });
 
 // ============================================================
-// NILAI ALTERNATIF ROUTES
+// ROUTE NILAI ALTERNATIF
 // ============================================================
 app.get('/api/nilai-alternatif', async (req, res) => {
     try {
@@ -1063,7 +1111,7 @@ app.delete('/api/nilai-alternatif/buku/:idBuku', verifyToken, isUser, async (req
 });
 
 // ============================================================
-// NILAI ALTERNATIF USER ROUTES
+// ROUTE NILAI ALTERNATIF USER
 // ============================================================
 app.get('/api/nilai-alternatif-user', verifyToken, isUser, async (req, res) => {
     try {
@@ -1148,7 +1196,7 @@ app.delete('/api/nilai-alternatif-user/buku/:idBuku', verifyToken, isUser, async
 });
 
 // ============================================================
-// PAIRWISE ROUTES
+// ROUTE PAIRWISE KRITERIA
 // ============================================================
 app.get('/api/pairwise', async (req, res) => {
     try {
@@ -1235,7 +1283,7 @@ app.delete('/api/pairwise/:id', verifyToken, isAdmin, async (req, res) => {
 });
 
 // ============================================================
-// PAIRWISE SUB ROUTES
+// ROUTE PAIRWISE SUB
 // ============================================================
 app.get('/api/pairwise-sub', async (req, res) => {
     try {
@@ -1319,7 +1367,421 @@ app.delete('/api/pairwise-sub/truncate', verifyToken, isAdmin, async (req, res) 
 });
 
 // ============================================================
-// NORMALISASI ROUTES
+// ROUTE NORMALISASI SUB-KRITERIA
+// ============================================================
+app.get('/api/normalisasi-sub/:idKriteria', async (req, res) => {
+    try {
+        const { idKriteria } = req.params;
+
+        const [subs] = await db.query(
+            'SELECT * FROM tbl_sub_kriteria WHERE id_kriteria = ? ORDER BY id_sub',
+            [idKriteria]
+        );
+
+        if (subs.length < 2) {
+            return res.status(400).json({
+                success: false,
+                message: `Minimal 2 sub-kriteria untuk normalisasi (saat ini ${subs.length})`
+            });
+        }
+
+        const [pairwise] = await db.query(
+            'SELECT * FROM tbl_pairwise_sub WHERE id_kriteria = ?',
+            [idKriteria]
+        );
+
+        const n = subs.length;
+        const subIds = subs.map(s => s.id_sub);
+        const subNames = subs.map(s => s.nama_sub);
+
+        const matrix = [];
+        for (let i = 0; i < n; i++) {
+            matrix[i] = [];
+            for (let j = 0; j < n; j++) {
+                if (i === j) {
+                    matrix[i][j] = 1;
+                } else {
+                    const found = pairwise.find(
+                        p => p.sub_1 === subIds[i] && p.sub_2 === subIds[j]
+                    );
+                    if (found) {
+                        matrix[i][j] = parseFloat(found.nilai);
+                    } else {
+                        const foundReverse = pairwise.find(
+                            p => p.sub_1 === subIds[j] && p.sub_2 === subIds[i]
+                        );
+                        matrix[i][j] = foundReverse ? 1 / parseFloat(foundReverse.nilai) : 3;
+                    }
+                }
+            }
+        }
+
+        const totalPerKolom = [];
+        for (let j = 0; j < n; j++) {
+            let sum = 0;
+            for (let i = 0; i < n; i++) {
+                sum += matrix[i][j];
+            }
+            totalPerKolom[j] = parseFloat(sum.toFixed(4));
+        }
+
+        const normalizedMatrix = [];
+        for (let i = 0; i < n; i++) {
+            normalizedMatrix[i] = [];
+            for (let j = 0; j < n; j++) {
+                normalizedMatrix[i][j] = parseFloat((matrix[i][j] / totalPerKolom[j]).toFixed(4));
+            }
+        }
+
+        const bobotSub = [];
+        for (let i = 0; i < n; i++) {
+            let sum = 0;
+            for (let j = 0; j < n; j++) {
+                sum += normalizedMatrix[i][j];
+            }
+            bobotSub[i] = parseFloat((sum / n).toFixed(4));
+        }
+
+        const eigenValues = [];
+        for (let i = 0; i < n; i++) {
+            let sum = 0;
+            for (let j = 0; j < n; j++) {
+                sum += matrix[i][j] * bobotSub[j];
+            }
+            eigenValues[i] = parseFloat((sum / bobotSub[i]).toFixed(4));
+        }
+
+        const lambdaMax = parseFloat((eigenValues.reduce((a, b) => a + b, 0) / n).toFixed(4));
+        const CI = parseFloat(((lambdaMax - n) / (n - 1)).toFixed(4));
+        const RI = { 1: 0, 2: 0, 3: 0.58, 4: 0.9, 5: 1.11, 6: 1.24, 7: 1.32, 8: 1.41, 9: 1.45, 10: 1.49 };
+        const CR = parseFloat((CI / (RI[n] || 1.49)).toFixed(4));
+        const isConsistent = CR < 0.1;
+
+        res.json({
+            success: true,
+            data: {
+                subs: subs.map((s, i) => ({
+                    id_sub: s.id_sub,
+                    nama_sub: s.nama_sub,
+                    bobot: bobotSub[i],
+                    bobotPersen: (bobotSub[i] * 100).toFixed(2) + '%'
+                })),
+                matrix: {
+                    labels: subNames,
+                    data: matrix
+                },
+                totalPerKolom: totalPerKolom,
+                normalizedMatrix: {
+                    labels: subNames,
+                    data: normalizedMatrix
+                },
+                eigenValues: eigenValues,
+                konsistensi: {
+                    lambdaMax: lambdaMax,
+                    CI: CI,
+                    CR: CR,
+                    RI: RI[n] || 1.49,
+                    n: n,
+                    isConsistent: isConsistent,
+                    statusText: isConsistent ? 'KONSISTEN ✅' : 'TIDAK KONSISTEN ❌'
+                }
+            }
+        });
+
+    } catch (err) {
+        console.error('Error GET /api/normalisasi-sub/:id:', err);
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+app.post('/api/normalisasi-sub/:idKriteria/simpan', verifyToken, isAdmin, async (req, res) => {
+    const conn = await db.getConnection();
+    try {
+        const { idKriteria } = req.params;
+
+        const [subs] = await conn.query(
+            'SELECT * FROM tbl_sub_kriteria WHERE id_kriteria = ? ORDER BY id_sub',
+            [idKriteria]
+        );
+
+        if (subs.length < 2) {
+            conn.release();
+            return res.status(400).json({
+                success: false,
+                message: `Minimal 2 sub-kriteria untuk normalisasi (saat ini ${subs.length})`
+            });
+        }
+
+        const [pairwise] = await conn.query(
+            'SELECT * FROM tbl_pairwise_sub WHERE id_kriteria = ?',
+            [idKriteria]
+        );
+
+        const n = subs.length;
+        const subIds = subs.map(s => s.id_sub);
+
+        const matrix = [];
+        for (let i = 0; i < n; i++) {
+            matrix[i] = [];
+            for (let j = 0; j < n; j++) {
+                if (i === j) {
+                    matrix[i][j] = 1;
+                } else {
+                    const found = pairwise.find(
+                        p => p.sub_1 === subIds[i] && p.sub_2 === subIds[j]
+                    );
+                    if (found) {
+                        matrix[i][j] = parseFloat(found.nilai);
+                    } else {
+                        const foundReverse = pairwise.find(
+                            p => p.sub_1 === subIds[j] && p.sub_2 === subIds[i]
+                        );
+                        matrix[i][j] = foundReverse ? 1 / parseFloat(foundReverse.nilai) : 3;
+                    }
+                }
+            }
+        }
+
+        const totalPerKolom = [];
+        for (let j = 0; j < n; j++) {
+            let sum = 0;
+            for (let i = 0; i < n; i++) {
+                sum += matrix[i][j];
+            }
+            totalPerKolom[j] = parseFloat(sum.toFixed(4));
+        }
+
+        const normalizedMatrix = [];
+        for (let i = 0; i < n; i++) {
+            normalizedMatrix[i] = [];
+            for (let j = 0; j < n; j++) {
+                normalizedMatrix[i][j] = parseFloat((matrix[i][j] / totalPerKolom[j]).toFixed(4));
+            }
+        }
+
+        const bobotSub = [];
+        for (let i = 0; i < n; i++) {
+            let sum = 0;
+            for (let j = 0; j < n; j++) {
+                sum += normalizedMatrix[i][j];
+            }
+            bobotSub[i] = parseFloat((sum / n).toFixed(4));
+        }
+
+        await conn.beginTransaction();
+        for (let i = 0; i < subIds.length; i++) {
+            await conn.query(
+                'UPDATE tbl_sub_kriteria SET bobot_sub = ? WHERE id_sub = ?',
+                [bobotSub[i], subIds[i]]
+            );
+        }
+        await conn.commit();
+
+        res.json({
+            success: true,
+            message: `Bobot sub-kriteria berhasil disimpan!`,
+            data: subs.map((s, i) => ({
+                id_sub: s.id_sub,
+                nama_sub: s.nama_sub,
+                bobot: bobotSub[i]
+            }))
+        });
+
+    } catch (err) {
+        await conn.rollback();
+        console.error('Error POST /api/normalisasi-sub/:id/simpan:', err);
+        res.status(500).json({ success: false, message: err.message });
+    } finally {
+        conn.release();
+    }
+});
+
+app.post('/api/normalisasi-sub/simpan-semua', verifyToken, isAdmin, async (req, res) => {
+    const conn = await db.getConnection();
+    try {
+        const [kriteria] = await conn.query('SELECT * FROM tbl_kriteria ORDER BY id_kriteria');
+
+        if (kriteria.length === 0) {
+            conn.release();
+            return res.status(400).json({
+                success: false,
+                message: 'Belum ada kriteria'
+            });
+        }
+
+        const berhasil = [];
+        const dilewati = [];
+
+        await conn.beginTransaction();
+
+        for (const k of kriteria) {
+            const [subs] = await conn.query(
+                'SELECT * FROM tbl_sub_kriteria WHERE id_kriteria = ? ORDER BY id_sub',
+                [k.id_kriteria]
+            );
+
+            if (subs.length < 2) {
+                dilewati.push({
+                    id_kriteria: k.id_kriteria,
+                    nama_kriteria: k.nama_kriteria,
+                    alasan: `Hanya ${subs.length} sub-kriteria (minimal 2)`
+                });
+                continue;
+            }
+
+            const [pairwise] = await conn.query(
+                'SELECT * FROM tbl_pairwise_sub WHERE id_kriteria = ?',
+                [k.id_kriteria]
+            );
+
+            const n = subs.length;
+            const subIds = subs.map(s => s.id_sub);
+
+            const matrix = [];
+            for (let i = 0; i < n; i++) {
+                matrix[i] = [];
+                for (let j = 0; j < n; j++) {
+                    if (i === j) {
+                        matrix[i][j] = 1;
+                    } else {
+                        const found = pairwise.find(
+                            p => p.sub_1 === subIds[i] && p.sub_2 === subIds[j]
+                        );
+                        if (found) {
+                            matrix[i][j] = parseFloat(found.nilai);
+                        } else {
+                            const foundReverse = pairwise.find(
+                                p => p.sub_1 === subIds[j] && p.sub_2 === subIds[i]
+                            );
+                            matrix[i][j] = foundReverse ? 1 / parseFloat(foundReverse.nilai) : 3;
+                        }
+                    }
+                }
+            }
+
+            const totalPerKolom = [];
+            for (let j = 0; j < n; j++) {
+                let sum = 0;
+                for (let i = 0; i < n; i++) {
+                    sum += matrix[i][j];
+                }
+                totalPerKolom[j] = parseFloat(sum.toFixed(4));
+            }
+
+            const normalizedMatrix = [];
+            for (let i = 0; i < n; i++) {
+                normalizedMatrix[i] = [];
+                for (let j = 0; j < n; j++) {
+                    normalizedMatrix[i][j] = parseFloat((matrix[i][j] / totalPerKolom[j]).toFixed(4));
+                }
+            }
+
+            const bobotSub = [];
+            for (let i = 0; i < n; i++) {
+                let sum = 0;
+                for (let j = 0; j < n; j++) {
+                    sum += normalizedMatrix[i][j];
+                }
+                bobotSub[i] = parseFloat((sum / n).toFixed(4));
+            }
+
+            for (let i = 0; i < subIds.length; i++) {
+                await conn.query(
+                    'UPDATE tbl_sub_kriteria SET bobot_sub = ? WHERE id_sub = ?',
+                    [bobotSub[i], subIds[i]]
+                );
+            }
+
+            berhasil.push({
+                id_kriteria: k.id_kriteria,
+                nama_kriteria: k.nama_kriteria,
+                jumlah_sub: subs.length
+            });
+        }
+
+        await conn.commit();
+
+        res.json({
+            success: true,
+            message: `✅ ${berhasil.length} kriteria berhasil disimpan, ${dilewati.length} dilewati`,
+            data: {
+                berhasil: berhasil,
+                dilewati: dilewati
+            }
+        });
+
+    } catch (err) {
+        await conn.rollback();
+        console.error('Error POST /api/normalisasi-sub/simpan-semua:', err);
+        res.status(500).json({ success: false, message: err.message });
+    } finally {
+        conn.release();
+    }
+});
+
+// ============================================================
+// ROUTE HITUNG GLOBAL
+// ============================================================
+app.post('/api/hitung-global', verifyToken, isAdmin, async (req, res) => {
+    const conn = await db.getConnection();
+    try {
+        const [kriteria] = await conn.query('SELECT * FROM tbl_kriteria');
+        const [subKriteria] = await conn.query('SELECT * FROM tbl_sub_kriteria');
+
+        if (kriteria.length === 0) {
+            conn.release();
+            return res.status(400).json({ success: false, message: 'Belum ada kriteria' });
+        }
+        if (subKriteria.length === 0) {
+            conn.release();
+            return res.status(400).json({ success: false, message: 'Belum ada sub-kriteria' });
+        }
+
+        const bobotKriteriaMap = {};
+        for (const k of kriteria) {
+            bobotKriteriaMap[k.id_kriteria] = parseFloat(k.bobot) || 0;
+        }
+
+        await conn.beginTransaction();
+        let updatedCount = 0;
+        const hasilUpdate = [];
+
+        for (const sub of subKriteria) {
+            const bobotKrit = bobotKriteriaMap[sub.id_kriteria] || 0;
+            const bobotSub = parseFloat(sub.bobot_sub) || 0;
+            const bobotGlobal = parseFloat((bobotKrit * bobotSub).toFixed(6));
+
+            await conn.query(
+                'UPDATE tbl_sub_kriteria SET bobot_global = ? WHERE id_sub = ?',
+                [bobotGlobal, sub.id_sub]
+            );
+            updatedCount++;
+            hasilUpdate.push({
+                id_sub: sub.id_sub,
+                nama_sub: sub.nama_sub,
+                bobot_global: bobotGlobal
+            });
+        }
+
+        await conn.commit();
+        conn.release();
+
+        res.json({
+            success: true,
+            message: `✅ ${updatedCount} sub-kriteria diperbarui`,
+            data: hasilUpdate
+        });
+
+    } catch (err) {
+        await conn.rollback();
+        conn.release();
+        console.error('Error POST /api/hitung-global:', err);
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// ============================================================
+// ROUTE NORMALISASI KRITERIA
 // ============================================================
 app.get('/api/normalisasi', async (req, res) => {
     try {
@@ -1391,6 +1853,21 @@ app.get('/api/normalisasi', async (req, res) => {
             bobotKriteria[i] = parseFloat((sum / n).toFixed(6));
         }
 
+        const eigenValues = [];
+        for (let i = 0; i < n; i++) {
+            let sum = 0;
+            for (let j = 0; j < n; j++) {
+                sum += matrix[i][j] * bobotKriteria[j];
+            }
+            eigenValues[i] = parseFloat((sum / bobotKriteria[i]).toFixed(4));
+        }
+
+        const lambdaMax = parseFloat((eigenValues.reduce((a, b) => a + b, 0) / n).toFixed(4));
+        const CI = parseFloat(((lambdaMax - n) / (n - 1)).toFixed(4));
+        const RI = { 1: 0, 2: 0, 3: 0.58, 4: 0.9, 5: 1.11, 6: 1.24, 7: 1.32, 8: 1.41, 9: 1.45, 10: 1.49 };
+        const CR = parseFloat((CI / (RI[n] || 1.49)).toFixed(4));
+        const isConsistent = CR < 0.1;
+
         for (let i = 0; i < n; i++) {
             await db.query(
                 'UPDATE tbl_kriteria SET bobot = ? WHERE id_kriteria = ?',
@@ -1403,12 +1880,31 @@ app.get('/api/normalisasi', async (req, res) => {
             data: {
                 jumlahKriteria: n,
                 kriteriaNames: kriteriaNames,
+                matrix: {
+                    labels: kriteriaNames,
+                    data: matrix
+                },
+                totalPerKolom: totalPerKolom,
+                normalizedMatrix: {
+                    labels: kriteriaNames,
+                    data: normalizedMatrix
+                },
                 bobotKriteria: kriteria.map((k, i) => ({
                     id_kriteria: k.id_kriteria,
                     nama_kriteria: k.nama_kriteria,
                     bobot: bobotKriteria[i],
                     bobotPersen: (bobotKriteria[i] * 100).toFixed(2) + '%'
-                }))
+                })),
+                eigenValues: eigenValues,
+                konsistensi: {
+                    lambdaMax: lambdaMax,
+                    CI: CI,
+                    CR: CR,
+                    RI: RI[n] || 1.49,
+                    n: n,
+                    isConsistent: isConsistent,
+                    statusText: isConsistent ? 'KONSISTEN ✅' : 'TIDAK KONSISTEN ❌'
+                }
             }
         });
 
@@ -1419,7 +1915,7 @@ app.get('/api/normalisasi', async (req, res) => {
 });
 
 // ============================================================
-// AHP ROUTES
+// ROUTE AHP
 // ============================================================
 app.post('/api/ahp/hitung', verifyToken, isAdmin, async (req, res) => {
     try {
@@ -1525,7 +2021,7 @@ app.delete('/api/ahp/hasil', verifyToken, isAdmin, async (req, res) => {
 });
 
 // ============================================================
-// STATS ROUTES
+// ROUTE STATISTIK
 // ============================================================
 app.get('/api/stats', async (req, res) => {
     try {
@@ -1552,9 +2048,8 @@ app.get('/api/stats', async (req, res) => {
 });
 
 // ============================================================
-// PEMINJAMAN ROUTES
+// ROUTE PEMINJAMAN (CREATE TABLES)
 // ============================================================
-// Create tables if not exists
 (async () => {
     try {
         const [tables] = await db.query("SHOW TABLES LIKE 'tbl_peminjaman'");
@@ -1600,6 +2095,9 @@ app.get('/api/stats', async (req, res) => {
     } catch (err) {}
 })();
 
+// ============================================================
+// ROUTE PEMINJAMAN - USER
+// ============================================================
 app.post('/api/peminjaman', verifyToken, isUser, async (req, res) => {
     try {
         const { id_buku, tanggal_pinjam } = req.body;
@@ -1739,6 +2237,9 @@ app.put('/api/peminjaman/:id/kembali', verifyToken, isUser, async (req, res) => 
     }
 });
 
+// ============================================================
+// ROUTE PEMINJAMAN - ADMIN
+// ============================================================
 app.get('/api/peminjaman/all', verifyToken, isAdmin, async (req, res) => {
     try {
         const [rows] = await db.query(
@@ -2120,7 +2621,7 @@ app.delete('/api/peminjaman/admin/:id', verifyToken, isAdmin, async (req, res) =
 });
 
 // ============================================================
-// RATING ROUTES
+// ROUTE RATING
 // ============================================================
 app.post('/api/rating', verifyToken, isUser, async (req, res) => {
     try {
@@ -2277,7 +2778,7 @@ app.get('/api/rating/all', verifyToken, isAdmin, async (req, res) => {
 });
 
 // ============================================================
-// DASHBOARD ROUTES
+// ROUTE DASHBOARD
 // ============================================================
 app.get('/api/dashboard/stats', verifyToken, async (req, res) => {
     try {
@@ -2327,397 +2828,13 @@ app.get('/api/dashboard/stats', verifyToken, async (req, res) => {
 });
 
 // ============================================================
-// HITUNG GLOBAL ROUTES
-// ============================================================
-app.post('/api/hitung-global', verifyToken, isAdmin, async (req, res) => {
-    const conn = await db.getConnection();
-    try {
-        const [kriteria] = await conn.query('SELECT * FROM tbl_kriteria');
-        const [subKriteria] = await conn.query('SELECT * FROM tbl_sub_kriteria');
-
-        if (kriteria.length === 0) {
-            conn.release();
-            return res.status(400).json({ success: false, message: 'Belum ada kriteria' });
-        }
-        if (subKriteria.length === 0) {
-            conn.release();
-            return res.status(400).json({ success: false, message: 'Belum ada sub-kriteria' });
-        }
-
-        const bobotKriteriaMap = {};
-        for (const k of kriteria) {
-            bobotKriteriaMap[k.id_kriteria] = parseFloat(k.bobot) || 0;
-        }
-
-        await conn.beginTransaction();
-        let updatedCount = 0;
-        const hasilUpdate = [];
-
-        for (const sub of subKriteria) {
-            const bobotKrit = bobotKriteriaMap[sub.id_kriteria] || 0;
-            const bobotSub = parseFloat(sub.bobot_sub) || 0;
-            const bobotGlobal = parseFloat((bobotKrit * bobotSub).toFixed(6));
-
-            await conn.query(
-                'UPDATE tbl_sub_kriteria SET bobot_global = ? WHERE id_sub = ?',
-                [bobotGlobal, sub.id_sub]
-            );
-            updatedCount++;
-            hasilUpdate.push({
-                id_sub: sub.id_sub,
-                nama_sub: sub.nama_sub,
-                bobot_global: bobotGlobal
-            });
-        }
-
-        await conn.commit();
-        conn.release();
-
-        res.json({
-            success: true,
-            message: `✅ ${updatedCount} sub-kriteria diperbarui`,
-            data: hasilUpdate
-        });
-
-    } catch (err) {
-        await conn.rollback();
-        conn.release();
-        console.error('Error POST /api/hitung-global:', err);
-        res.status(500).json({ success: false, message: err.message });
-    }
-});
-
-// ============================================================
-// NORMALISASI SUB KRITERIA ROUTES
-// ============================================================
-app.get('/api/normalisasi-sub/:idKriteria', async (req, res) => {
-    try {
-        const { idKriteria } = req.params;
-
-        const [subs] = await db.query(
-            'SELECT * FROM tbl_sub_kriteria WHERE id_kriteria = ? ORDER BY id_sub',
-            [idKriteria]
-        );
-
-        if (subs.length < 2) {
-            return res.status(400).json({
-                success: false,
-                message: `Minimal 2 sub-kriteria untuk normalisasi (saat ini ${subs.length})`
-            });
-        }
-
-        const [pairwise] = await db.query(
-            'SELECT * FROM tbl_pairwise_sub WHERE id_kriteria = ?',
-            [idKriteria]
-        );
-
-        const n = subs.length;
-        const subIds = subs.map(s => s.id_sub);
-        const subNames = subs.map(s => s.nama_sub);
-
-        const matrix = [];
-        for (let i = 0; i < n; i++) {
-            matrix[i] = [];
-            for (let j = 0; j < n; j++) {
-                if (i === j) {
-                    matrix[i][j] = 1;
-                } else {
-                    const found = pairwise.find(
-                        p => p.sub_1 === subIds[i] && p.sub_2 === subIds[j]
-                    );
-                    if (found) {
-                        matrix[i][j] = parseFloat(found.nilai);
-                    } else {
-                        const foundReverse = pairwise.find(
-                            p => p.sub_1 === subIds[j] && p.sub_2 === subIds[i]
-                        );
-                        matrix[i][j] = foundReverse ? 1 / parseFloat(foundReverse.nilai) : 3;
-                    }
-                }
-            }
-        }
-
-        const totalPerKolom = [];
-        for (let j = 0; j < n; j++) {
-            let sum = 0;
-            for (let i = 0; i < n; i++) {
-                sum += matrix[i][j];
-            }
-            totalPerKolom[j] = parseFloat(sum.toFixed(4));
-        }
-
-        const normalizedMatrix = [];
-        for (let i = 0; i < n; i++) {
-            normalizedMatrix[i] = [];
-            for (let j = 0; j < n; j++) {
-                normalizedMatrix[i][j] = parseFloat((matrix[i][j] / totalPerKolom[j]).toFixed(4));
-            }
-        }
-
-        const bobotSub = [];
-        for (let i = 0; i < n; i++) {
-            let sum = 0;
-            for (let j = 0; j < n; j++) {
-                sum += normalizedMatrix[i][j];
-            }
-            bobotSub[i] = parseFloat((sum / n).toFixed(4));
-        }
-
-        res.json({
-            success: true,
-            data: {
-                subs: subs.map((s, i) => ({
-                    id_sub: s.id_sub,
-                    nama_sub: s.nama_sub,
-                    bobot: bobotSub[i],
-                    bobotPersen: (bobotSub[i] * 100).toFixed(2) + '%'
-                })),
-                matrix: {
-                    labels: subNames,
-                    data: matrix
-                }
-            }
-        });
-
-    } catch (err) {
-        console.error('Error GET /api/normalisasi-sub/:id:', err);
-        res.status(500).json({ success: false, message: err.message });
-    }
-});
-
-app.post('/api/normalisasi-sub/:idKriteria/simpan', verifyToken, isAdmin, async (req, res) => {
-    const conn = await db.getConnection();
-    try {
-        const { idKriteria } = req.params;
-
-        const [subs] = await conn.query(
-            'SELECT * FROM tbl_sub_kriteria WHERE id_kriteria = ? ORDER BY id_sub',
-            [idKriteria]
-        );
-
-        if (subs.length < 2) {
-            conn.release();
-            return res.status(400).json({
-                success: false,
-                message: `Minimal 2 sub-kriteria untuk normalisasi (saat ini ${subs.length})`
-            });
-        }
-
-        const [pairwise] = await conn.query(
-            'SELECT * FROM tbl_pairwise_sub WHERE id_kriteria = ?',
-            [idKriteria]
-        );
-
-        const n = subs.length;
-        const subIds = subs.map(s => s.id_sub);
-
-        const matrix = [];
-        for (let i = 0; i < n; i++) {
-            matrix[i] = [];
-            for (let j = 0; j < n; j++) {
-                if (i === j) {
-                    matrix[i][j] = 1;
-                } else {
-                    const found = pairwise.find(
-                        p => p.sub_1 === subIds[i] && p.sub_2 === subIds[j]
-                    );
-                    if (found) {
-                        matrix[i][j] = parseFloat(found.nilai);
-                    } else {
-                        const foundReverse = pairwise.find(
-                            p => p.sub_1 === subIds[j] && p.sub_2 === subIds[i]
-                        );
-                        matrix[i][j] = foundReverse ? 1 / parseFloat(foundReverse.nilai) : 3;
-                    }
-                }
-            }
-        }
-
-        const totalPerKolom = [];
-        for (let j = 0; j < n; j++) {
-            let sum = 0;
-            for (let i = 0; i < n; i++) {
-                sum += matrix[i][j];
-            }
-            totalPerKolom[j] = parseFloat(sum.toFixed(4));
-        }
-
-        const normalizedMatrix = [];
-        for (let i = 0; i < n; i++) {
-            normalizedMatrix[i] = [];
-            for (let j = 0; j < n; j++) {
-                normalizedMatrix[i][j] = parseFloat((matrix[i][j] / totalPerKolom[j]).toFixed(4));
-            }
-        }
-
-        const bobotSub = [];
-        for (let i = 0; i < n; i++) {
-            let sum = 0;
-            for (let j = 0; j < n; j++) {
-                sum += normalizedMatrix[i][j];
-            }
-            bobotSub[i] = parseFloat((sum / n).toFixed(4));
-        }
-
-        await conn.beginTransaction();
-        for (let i = 0; i < subIds.length; i++) {
-            await conn.query(
-                'UPDATE tbl_sub_kriteria SET bobot_sub = ? WHERE id_sub = ?',
-                [bobotSub[i], subIds[i]]
-            );
-        }
-        await conn.commit();
-
-        res.json({
-            success: true,
-            message: `Bobot sub-kriteria berhasil disimpan!`,
-            data: subs.map((s, i) => ({
-                id_sub: s.id_sub,
-                nama_sub: s.nama_sub,
-                bobot: bobotSub[i]
-            }))
-        });
-
-    } catch (err) {
-        await conn.rollback();
-        console.error('Error POST /api/normalisasi-sub/:id/simpan:', err);
-        res.status(500).json({ success: false, message: err.message });
-    } finally {
-        conn.release();
-    }
-});
-
-app.post('/api/normalisasi-sub/simpan-semua', verifyToken, isAdmin, async (req, res) => {
-    const conn = await db.getConnection();
-    try {
-        const [kriteria] = await conn.query('SELECT * FROM tbl_kriteria ORDER BY id_kriteria');
-
-        if (kriteria.length === 0) {
-            conn.release();
-            return res.status(400).json({
-                success: false,
-                message: 'Belum ada kriteria'
-            });
-        }
-
-        const berhasil = [];
-        const dilewati = [];
-
-        await conn.beginTransaction();
-
-        for (const k of kriteria) {
-            const [subs] = await conn.query(
-                'SELECT * FROM tbl_sub_kriteria WHERE id_kriteria = ? ORDER BY id_sub',
-                [k.id_kriteria]
-            );
-
-            if (subs.length < 2) {
-                dilewati.push({
-                    id_kriteria: k.id_kriteria,
-                    nama_kriteria: k.nama_kriteria,
-                    alasan: `Hanya ${subs.length} sub-kriteria (minimal 2)`
-                });
-                continue;
-            }
-
-            const [pairwise] = await conn.query(
-                'SELECT * FROM tbl_pairwise_sub WHERE id_kriteria = ?',
-                [k.id_kriteria]
-            );
-
-            const n = subs.length;
-            const subIds = subs.map(s => s.id_sub);
-
-            const matrix = [];
-            for (let i = 0; i < n; i++) {
-                matrix[i] = [];
-                for (let j = 0; j < n; j++) {
-                    if (i === j) {
-                        matrix[i][j] = 1;
-                    } else {
-                        const found = pairwise.find(
-                            p => p.sub_1 === subIds[i] && p.sub_2 === subIds[j]
-                        );
-                        if (found) {
-                            matrix[i][j] = parseFloat(found.nilai);
-                        } else {
-                            const foundReverse = pairwise.find(
-                                p => p.sub_1 === subIds[j] && p.sub_2 === subIds[i]
-                            );
-                            matrix[i][j] = foundReverse ? 1 / parseFloat(foundReverse.nilai) : 3;
-                        }
-                    }
-                }
-            }
-
-            const totalPerKolom = [];
-            for (let j = 0; j < n; j++) {
-                let sum = 0;
-                for (let i = 0; i < n; i++) {
-                    sum += matrix[i][j];
-                }
-                totalPerKolom[j] = parseFloat(sum.toFixed(4));
-            }
-
-            const normalizedMatrix = [];
-            for (let i = 0; i < n; i++) {
-                normalizedMatrix[i] = [];
-                for (let j = 0; j < n; j++) {
-                    normalizedMatrix[i][j] = parseFloat((matrix[i][j] / totalPerKolom[j]).toFixed(4));
-                }
-            }
-
-            const bobotSub = [];
-            for (let i = 0; i < n; i++) {
-                let sum = 0;
-                for (let j = 0; j < n; j++) {
-                    sum += normalizedMatrix[i][j];
-                }
-                bobotSub[i] = parseFloat((sum / n).toFixed(4));
-            }
-
-            for (let i = 0; i < subIds.length; i++) {
-                await conn.query(
-                    'UPDATE tbl_sub_kriteria SET bobot_sub = ? WHERE id_sub = ?',
-                    [bobotSub[i], subIds[i]]
-                );
-            }
-
-            berhasil.push({
-                id_kriteria: k.id_kriteria,
-                nama_kriteria: k.nama_kriteria,
-                jumlah_sub: subs.length
-            });
-        }
-
-        await conn.commit();
-
-        res.json({
-            success: true,
-            message: `✅ ${berhasil.length} kriteria berhasil disimpan, ${dilewati.length} dilewati`,
-            data: {
-                berhasil: berhasil,
-                dilewati: dilewati
-            }
-        });
-
-    } catch (err) {
-        await conn.rollback();
-        console.error('Error POST /api/normalisasi-sub/simpan-semua:', err);
-        res.status(500).json({ success: false, message: err.message });
-    } finally {
-        conn.release();
-    }
-});
-
-// ============================================================
 // ERROR HANDLING
 // ============================================================
 app.use((req, res) => {
     console.log('❌ 404 Not Found:', req.method, req.url);
     res.status(404).json({
         success: false,
-        message: 'Endpoint tidak ditemukan'
+        message: `Endpoint ${req.method} ${req.url} tidak ditemukan`
     });
 });
 
@@ -2741,7 +2858,8 @@ app.listen(PORT, () => {
     console.log(`📋 Health: http://localhost:${PORT}/api/health`);
     console.log(`📋 Test:   http://localhost:${PORT}/api/test`);
     console.log(`📋 Login:  http://localhost:${PORT}/api/auth/login`);
-    console.log(`📋 CORS:   ${'* (ALLOWED)'}`);
+    console.log(`📋 CORS:   * (ALLOWED)`);
+    console.log(`📊 Database: ${process.env.DB_NAME || 'railway'}`);
     console.log('============================================\n');
 });
 
